@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Velocity Arena - 3D Car Soccer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@400;600&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #00ff88;
+            --secondary: #ff0066;
+            --bg-dark: #0a0a0f;
+            --bg-lighter: #1a1a2e;
+            --text-glow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+            color: var(--primary);
+            overflow: hidden;
+            cursor: crosshair;
+        }
+        
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(ellipse at center, #16213e 0%, #0a0a0f 100%);
+        }
+        
+        #hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 20px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        #scoreboard {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(10, 10, 15, 0.8);
+            border: 2px solid var(--primary);
+            border-radius: 10px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
+        }
+        
+        .team-score {
+            font-family: 'Orbitron', monospace;
+            font-size: 48px;
+            font-weight: 900;
+            text-shadow: var(--text-glow);
+            letter-spacing: 3px;
+        }
+        
+        .team-blue { color: #00d4ff; }
+        .team-red { color: var(--secondary); }
+        
+        #timer {
+            font-family: 'Orbitron', monospace;
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--primary);
+            text-shadow: var(--text-glow);
+        }
+        
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(10, 10, 15, 0.9);
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 14px;
+            max-width: 250px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+        
+        #controls h3 {
+            font-family: 'Orbitron', monospace;
+            margin-bottom: 10px;
+            color: var(--primary);
+            text-shadow: var(--text-glow);
+        }
+        
+        #controls p {
+            margin: 5px 0;
+            color: #aaa;
+        }
+        
+        #status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(10, 10, 15, 0.9);
+            border: 2px solid var(--secondary);
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 14px;
+            color: var(--secondary);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(255, 0, 102, 0.2);
+        }
+        
+        .goal-notification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            font-family: 'Orbitron', monospace;
+            font-size: 72px;
+            font-weight: 900;
+            color: var(--primary);
+            text-shadow: 0 0 30px var(--primary), 0 0 60px var(--primary);
+            animation: goalPulse 2s ease-out forwards;
+            pointer-events: none;
+            z-index: 200;
+        }
+        
+        @keyframes goalPulse {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+            30% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            70% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="hud">
+        <div id="scoreboard">
+            <div class="team-score team-blue" id="blueScore">0</div>
+            <div id="timer">5:00</div>
+            <div class="team-score team-red" id="redScore">0</div>
+        </div>
+    </div>
+    
+    <div id="controls">
+        <h3>CONTROLS</h3>
+        <p><strong>W/↑</strong> - Accelerate</p>
+        <p><strong>S/↓</strong> - Brake/Reverse</p>
+        <p><strong>A/←</strong> - Turn Left</p>
+        <p><strong>D/→</strong> - Turn Right</p>
+        <p><strong>SPACE</strong> - Boost</p>
+    </div>
+    
+    <div id="status">
+        <p>Status: <span id="connectionStatus">Offline</span></p>
+        <p>Players: <span id="playerCount">1</span></p>
+        <p>Ping: <span id="ping">--</span>ms</p>
+    </div>
+
+    <!-- Three.js, Cannon-es, and Socket.io -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        // ==========================================
+        // GAME CONFIGURATION
+        // ==========================================
+        const CONFIG = {
+            arena: {
+                width: 100,
+                depth: 140,
+                wallHeight: 10,
+                goalWidth: 30,
+                goalDepth: 10
+            },
+            car: {
+                width: 3,
+                height: 1.5,
+                depth: 5,
+                mass: 1000,
+                maxSpeed: 50,
+                acceleration: 30,
+                turnSpeed: 3,
+                boostMultiplier: 1.5
+            },
+            ball: {
+                radius: 1.5,
+                mass: 100,
+                restitution: 0.7
+            },
+            physics: {
+                gravity: -30,
+                friction: 0.3,
+                restitution: 0.3
+            }
+        };
+
+        // ==========================================
+        // SCENE SETUP
+        // ==========================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0f);
+        scene.fog = new THREE.Fog(0x0a0a0f, 50, 200);
+
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        camera.position.set(0, 15, 30);
+
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('gameCanvas'),
+            antialias: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // ==========================================
+        // LIGHTING
+        // ==========================================
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        const spotLight1 = new THREE.SpotLight(0x00ff88, 1);
+        spotLight1.position.set(-40, 50, 0);
+        spotLight1.castShadow = true;
+        spotLight1.angle = Math.PI / 4;
+        spotLight1.penumbra = 0.3;
+        spotLight1.shadow.mapSize.width = 2048;
+        spotLight1.shadow.mapSize.height = 2048;
+        scene.add(spotLight1);
+
+        const spotLight2 = new THREE.SpotLight(0xff0066, 1);
+        spotLight2.position.set(40, 50, 0);
+        spotLight2.castShadow = true;
+        spotLight2.angle = Math.PI / 4;
+        spotLight2.penumbra = 0.3;
+        scene.add(spotLight2);
+
+        const hemisphereLight = new THREE.HemisphereLight(0x00d4ff, 0x0a0a0f, 0.5);
+        scene.add(hemisphereLight);
+
+        // ==========================================
+        // PHYSICS WORLD
+        // ==========================================
+        const world = new CANNON.World({
+            gravity: new CANNON.Vec3(0, CONFIG.physics.gravity, 0)
+        });
+        world.defaultContactMaterial.friction = CONFIG.physics.friction;
+        world.defaultContactMaterial.restitution = CONFIG.physics.restitution;
+
+        // ==========================================
+        // ARENA CREATION
+        // ==========================================
+        function createArena() {
+            // Floor
+            const floorGeometry = new THREE.PlaneGeometry(
+                CONFIG.arena.width,
+                CONFIG.arena.depth
+            );
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a4d2e,
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Physics floor
+            const floorShape = new CANNON.Plane();
+            const floorBody = new CANNON.Body({ mass: 0 });
+            floorBody.addShape(floorShape);
+            floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+            world.addBody(floorBody);
+
+            // Center circle
+            const circleGeometry = new THREE.RingGeometry(8, 8.5, 64);
+            const circleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                side: THREE.DoubleSide
+            });
+            const centerCircle = new THREE.Mesh(circleGeometry, circleMaterial);
+            centerCircle.rotation.x = -Math.PI / 2;
+            centerCircle.position.y = 0.01;
+            scene.add(centerCircle);
+
+            // Walls
+            createWalls();
+            
+            // Goals
+            createGoal(-CONFIG.arena.depth / 2, 0x00d4ff, 'blue');
+            createGoal(CONFIG.arena.depth / 2, 0xff0066, 'red');
+        }
+
+        function createWalls() {
+            const wallMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2a2a3e,
+                roughness: 0.5,
+                metalness: 0.5,
+                emissive: 0x00ff88,
+                emissiveIntensity: 0.1
+            });
+
+            // Side walls
+            const sideWallGeometry = new THREE.BoxGeometry(
+                2,
+                CONFIG.arena.wallHeight,
+                CONFIG.arena.depth
+            );
+            
+            const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+            leftWall.position.set(-CONFIG.arena.width / 2 - 1, CONFIG.arena.wallHeight / 2, 0);
+            leftWall.castShadow = true;
+            scene.add(leftWall);
+
+            const rightWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+            rightWall.position.set(CONFIG.arena.width / 2 + 1, CONFIG.arena.wallHeight / 2, 0);
+            rightWall.castShadow = true;
+            scene.add(rightWall);
+
+            // Physics for side walls
+            const wallShape = new CANNON.Box(new CANNON.Vec3(1, CONFIG.arena.wallHeight / 2, CONFIG.arena.depth / 2));
+            
+            const leftWallBody = new CANNON.Body({ mass: 0 });
+            leftWallBody.addShape(wallShape);
+            leftWallBody.position.copy(leftWall.position);
+            world.addBody(leftWallBody);
+
+            const rightWallBody = new CANNON.Body({ mass: 0 });
+            rightWallBody.addShape(wallShape);
+            rightWallBody.position.copy(rightWall.position);
+            world.addBody(rightWallBody);
+
+            // Back walls (excluding goal areas)
+            const backWallSegmentWidth = (CONFIG.arena.width - CONFIG.arena.goalWidth) / 2;
+            const backWallGeometry = new THREE.BoxGeometry(
+                backWallSegmentWidth,
+                CONFIG.arena.wallHeight,
+                2
+            );
+
+            // Top goal back walls
+            const topLeftWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+            topLeftWall.position.set(
+                -CONFIG.arena.width / 2 + backWallSegmentWidth / 2,
+                CONFIG.arena.wallHeight / 2,
+                -CONFIG.arena.depth / 2 - 1
+            );
+            topLeftWall.castShadow = true;
+            scene.add(topLeftWall);
+
+            const topRightWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+            topRightWall.position.set(
+                CONFIG.arena.width / 2 - backWallSegmentWidth / 2,
+                CONFIG.arena.wallHeight / 2,
+                -CONFIG.arena.depth / 2 - 1
+            );
+            topRightWall.castShadow = true;
+            scene.add(topRightWall);
+
+            // Bottom goal back walls
+            const bottomLeftWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+            bottomLeftWall.position.set(
+                -CONFIG.arena.width / 2 + backWallSegmentWidth / 2,
+                CONFIG.arena.wallHeight / 2,
+                CONFIG.arena.depth / 2 + 1
+            );
+            bottomLeftWall.castShadow = true;
+            scene.add(bottomLeftWall);
+
+            const bottomRightWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+            bottomRightWall.position.set(
+                CONFIG.arena.width / 2 - backWallSegmentWidth / 2,
+                CONFIG.arena.wallHeight / 2,
+                CONFIG.arena.depth / 2 + 1
+            );
+            bottomRightWall.castShadow = true;
+            scene.add(bottomRightWall);
+
+            // Physics for back walls
+            const backWallShape = new CANNON.Box(new CANNON.Vec3(backWallSegmentWidth / 2, CONFIG.arena.wallHeight / 2, 1));
+            
+            [topLeftWall, topRightWall, bottomLeftWall, bottomRightWall].forEach(wall => {
+                const wallBody = new CANNON.Body({ mass: 0 });
+                wallBody.addShape(backWallShape);
+                wallBody.position.copy(wall.position);
+                world.addBody(wallBody);
+            });
+        }
+
+        function createGoal(zPosition, color, team) {
+            const goalGroup = new THREE.Group();
+
+            // Goal posts
+            const postGeometry = new THREE.CylinderGeometry(0.3, 0.3, CONFIG.arena.wallHeight, 16);
+            const postMaterial = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: 0.3,
+                metalness: 0.7,
+                emissive: color,
+                emissiveIntensity: 0.3
+            });
+
+            const leftPost = new THREE.Mesh(postGeometry, postMaterial);
+            leftPost.position.set(-CONFIG.arena.goalWidth / 2, CONFIG.arena.wallHeight / 2, zPosition);
+            leftPost.castShadow = true;
+            goalGroup.add(leftPost);
+
+            const rightPost = new THREE.Mesh(postGeometry, postMaterial);
+            rightPost.position.set(CONFIG.arena.goalWidth / 2, CONFIG.arena.wallHeight / 2, zPosition);
+            rightPost.castShadow = true;
+            goalGroup.add(rightPost);
+
+            // Crossbar
+            const crossbarGeometry = new THREE.CylinderGeometry(0.3, 0.3, CONFIG.arena.goalWidth, 16);
+            const crossbar = new THREE.Mesh(crossbarGeometry, postMaterial);
+            crossbar.rotation.z = Math.PI / 2;
+            crossbar.position.set(0, CONFIG.arena.wallHeight, zPosition);
+            crossbar.castShadow = true;
+            goalGroup.add(crossbar);
+
+            // Goal zone marker (for scoring detection)
+            const goalZoneGeometry = new THREE.BoxGeometry(
+                CONFIG.arena.goalWidth,
+                0.1,
+                CONFIG.arena.goalDepth
+            );
+            const goalZoneMaterial = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.2
+            });
+            const goalZone = new THREE.Mesh(goalZoneGeometry, goalZoneMaterial);
+            goalZone.position.set(0, 0.05, zPosition + (team === 'blue' ? -CONFIG.arena.goalDepth / 2 : CONFIG.arena.goalDepth / 2));
+            goalZone.userData = { isGoal: true, team: team };
+            goalGroup.add(goalZone);
+
+            scene.add(goalGroup);
+            return goalZone;
+        }
+
+        // ==========================================
+        // BALL CREATION
+        // ==========================================
+        let ball, ballBody;
+
+        function createBall() {
+            const ballGeometry = new THREE.SphereGeometry(CONFIG.ball.radius, 32, 32);
+            const ballMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.4,
+                metalness: 0.6,
+                emissive: 0x00ff88,
+                emissiveIntensity: 0.2
+            });
+            ball = new THREE.Mesh(ballGeometry, ballMaterial);
+            ball.castShadow = true;
+            ball.receiveShadow = true;
+            scene.add(ball);
+
+            // Physics
+            const ballShape = new CANNON.Sphere(CONFIG.ball.radius);
+            ballBody = new CANNON.Body({
+                mass: CONFIG.ball.mass,
+                shape: ballShape,
+                material: new CANNON.Material({ restitution: CONFIG.ball.restitution })
+            });
+            ballBody.position.set(0, 5, 0);
+            ballBody.linearDamping = 0.1;
+            ballBody.angularDamping = 0.1;
+            world.addBody(ballBody);
+        }
+
+        function resetBall() {
+            ballBody.position.set(0, 5, 0);
+            ballBody.velocity.set(0, 0, 0);
+            ballBody.angularVelocity.set(0, 0, 0);
+        }
+
+        // ==========================================
+        // CAR CREATION
+        // ==========================================
+        let car, carBody;
+        const carControls = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            boost: false
+        };
+
+        function createCar() {
+            const carGroup = new THREE.Group();
+
+            // Car body
+            const bodyGeometry = new THREE.BoxGeometry(
+                CONFIG.car.width,
+                CONFIG.car.height,
+                CONFIG.car.depth
+            );
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0x00d4ff,
+                roughness: 0.3,
+                metalness: 0.8,
+                emissive: 0x00d4ff,
+                emissiveIntensity: 0.2
+            });
+            const carBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            carBody.castShadow = true;
+            carGroup.add(carBody);
+
+            // Wheels
+            const wheelGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16);
+            const wheelMaterial = new THREE.MeshStandardMaterial({
+                color: 0x222222,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+
+            const wheelPositions = [
+                [-1.2, -0.5, 1.5],
+                [1.2, -0.5, 1.5],
+                [-1.2, -0.5, -1.5],
+                [1.2, -0.5, -1.5]
+            ];
+
+            wheelPositions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                wheel.castShadow = true;
+                carGroup.add(wheel);
+            });
+
+            car = carGroup;
+            car.position.set(0, 2, 20);
+            scene.add(car);
+
+            // Physics
+            const carShape = new CANNON.Box(new CANNON.Vec3(
+                CONFIG.car.width / 2,
+                CONFIG.car.height / 2,
+                CONFIG.car.depth / 2
+            ));
+            carBody = new CANNON.Body({
+                mass: CONFIG.car.mass,
+                shape: carShape
+            });
+            carBody.position.copy(car.position);
+            carBody.linearDamping = 0.3;
+            carBody.angularDamping = 0.5;
+            world.addBody(carBody);
+        }
+
+        // ==========================================
+        // INPUT HANDLING
+        // ==========================================
+        window.addEventListener('keydown', (e) => {
+            switch(e.key.toLowerCase()) {
+                case 'w':
+                case 'arrowup':
+                    carControls.forward = true;
+                    break;
+                case 's':
+                case 'arrowdown':
+                    carControls.backward = true;
+                    break;
+                case 'a':
+                case 'arrowleft':
+                    carControls.left = true;
+                    break;
+                case 'd':
+                case 'arrowright':
+                    carControls.right = true;
+                    break;
+                case ' ':
+                    carControls.boost = true;
+                    break;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            switch(e.key.toLowerCase()) {
+                case 'w':
+                case 'arrowup':
+                    carControls.forward = false;
+                    break;
+                case 's':
+                case 'arrowdown':
+                    carControls.backward = false;
+                    break;
+                case 'a':
+                case 'arrowleft':
+                    carControls.left = false;
+                    break;
+                case 'd':
+                case 'arrowright':
+                    carControls.right = false;
+                    break;
+                case ' ':
+                    carControls.boost = false;
+                    break;
+            }
+        });
+
+        // ==========================================
+        // CAR PHYSICS UPDATE
+        // ==========================================
+        function updateCarPhysics() {
+            const direction = new CANNON.Vec3();
+            carBody.quaternion.vmult(new CANNON.Vec3(0, 0, -1), direction);
+            
+            let acceleration = CONFIG.car.acceleration;
+            if (carControls.boost) {
+                acceleration *= CONFIG.car.boostMultiplier;
+            }
+
+            if (carControls.forward) {
+                carBody.applyImpulse(
+                    direction.scale(acceleration),
+                    carBody.position
+                );
+            }
+            
+            if (carControls.backward) {
+                carBody.applyImpulse(
+                    direction.scale(-acceleration * 0.7),
+                    carBody.position
+                );
+            }
+
+            if (carControls.left) {
+                carBody.angularVelocity.y = CONFIG.car.turnSpeed;
+            } else if (carControls.right) {
+                carBody.angularVelocity.y = -CONFIG.car.turnSpeed;
+            } else {
+                carBody.angularVelocity.y *= 0.9;
+            }
+
+            // Speed limit
+            const speed = carBody.velocity.length();
+            const maxSpeed = carControls.boost ? 
+                CONFIG.car.maxSpeed * CONFIG.car.boostMultiplier : 
+                CONFIG.car.maxSpeed;
+            
+            if (speed > maxSpeed) {
+                carBody.velocity.scale(maxSpeed / speed, carBody.velocity);
+            }
+        }
+
+        // ==========================================
+        // CAMERA FOLLOW
+        // ==========================================
+        function updateCamera() {
+            const carPos = car.position;
+            const carRot = car.rotation;
+            
+            const offset = new THREE.Vector3(0, 8, 15);
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), carRot.y);
+            
+            const targetPosition = new THREE.Vector3(
+                carPos.x + offset.x,
+                carPos.y + offset.y,
+                carPos.z + offset.z
+            );
+            
+            camera.position.lerp(targetPosition, 0.1);
+            camera.lookAt(carPos);
+        }
+
+        // ==========================================
+        // GOAL DETECTION
+        // ==========================================
+        let scores = { blue: 0, red: 0 };
+
+        function checkGoal() {
+            const ballPos = ballBody.position;
+            
+            // Blue goal (negative Z)
+            if (ballPos.z < -CONFIG.arena.depth / 2 && 
+                Math.abs(ballPos.x) < CONFIG.arena.goalWidth / 2) {
+                handleGoal('red');
+            }
+            
+            // Red goal (positive Z)
+            if (ballPos.z > CONFIG.arena.depth / 2 && 
+                Math.abs(ballPos.x) < CONFIG.arena.goalWidth / 2) {
+                handleGoal('blue');
+            }
+        }
+
+        function handleGoal(team) {
+            scores[team]++;
+            document.getElementById(team + 'Score').textContent = scores[team];
+            
+            console.log(`GOAL! ${team.toUpperCase()} TEAM SCORES!`);
+            
+            // Goal notification
+            const notification = document.createElement('div');
+            notification.className = 'goal-notification';
+            notification.textContent = 'GOAL!';
+            notification.style.color = team === 'blue' ? '#00d4ff' : '#ff0066';
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                document.body.removeChild(notification);
+            }, 2000);
+            
+            // Reset ball
+            setTimeout(() => {
+                resetBall();
+            }, 1000);
+        }
+
+        // ==========================================
+        // MULTIPLAYER (Socket.io Integration)
+        // ==========================================
+        let socket;
+        let playerId = null;
+        let otherPlayers = {};
+
+        function initializeMultiplayer() {
+            // Connect to server (change URL as needed)
+            socket = io('http://localhost:3000', {
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 5
+            });
+
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                document.getElementById('connectionStatus').textContent = 'Connected';
+                document.getElementById('connectionStatus').style.color = '#00ff88';
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                document.getElementById('connectionStatus').textContent = 'Disconnected';
+                document.getElementById('connectionStatus').style.color = '#ff0066';
+            });
+
+            socket.on('playerId', (id) => {
+                playerId = id;
+                console.log('Assigned player ID:', id);
+            });
+
+            socket.on('playerJoined', (data) => {
+                console.log('Player joined:', data.id);
+                // Create visual representation of other player
+                createOtherPlayer(data.id, data.position);
+                updatePlayerCount();
+            });
+
+            socket.on('playerLeft', (data) => {
+                console.log('Player left:', data.id);
+                removeOtherPlayer(data.id);
+                updatePlayerCount();
+            });
+
+            socket.on('gameState', (state) => {
+                // Server-authoritative state update
+                if (state.ball) {
+                    ballBody.position.copy(state.ball.position);
+                    ballBody.velocity.copy(state.ball.velocity);
+                }
+                
+                if (state.scores) {
+                    scores = state.scores;
+                    document.getElementById('blueScore').textContent = scores.blue;
+                    document.getElementById('redScore').textContent = scores.red;
+                }
+                
+                // Update other players
+                if (state.players) {
+                    for (let id in state.players) {
+                        if (id !== playerId && otherPlayers[id]) {
+                            // Linear interpolation for smooth movement
+                            const targetPos = state.players[id].position;
+                            const currentPos = otherPlayers[id].position;
+                            currentPos.lerp(targetPos, 0.3);
+                            
+                            otherPlayers[id].quaternion.copy(state.players[id].rotation);
+                        }
+                    }
+                }
+            });
+
+            socket.on('ping', (data) => {
+                const latency = Date.now() - data.timestamp;
+                document.getElementById('ping').textContent = latency;
+            });
+        }
+
+        function createOtherPlayer(id, position) {
+            const carGroup = new THREE.Group();
+            
+            const bodyGeometry = new THREE.BoxGeometry(
+                CONFIG.car.width,
+                CONFIG.car.height,
+                CONFIG.car.depth
+            );
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff0066,
+                roughness: 0.3,
+                metalness: 0.8
+            });
+            const carBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            carGroup.add(carBody);
+            
+            carGroup.position.copy(position);
+            scene.add(carGroup);
+            
+            otherPlayers[id] = carGroup;
+        }
+
+        function removeOtherPlayer(id) {
+            if (otherPlayers[id]) {
+                scene.remove(otherPlayers[id]);
+                delete otherPlayers[id];
+            }
+        }
+
+        function updatePlayerCount() {
+            const count = Object.keys(otherPlayers).length + 1;
+            document.getElementById('playerCount').textContent = count;
+        }
+
+        function sendPlayerUpdate() {
+            if (socket && socket.connected) {
+                socket.emit('playerUpdate', {
+                    position: carBody.position,
+                    rotation: carBody.quaternion,
+                    velocity: carBody.velocity
+                });
+            }
+        }
+
+        // ==========================================
+        // ANIMATION LOOP
+        // ==========================================
+        const clock = new THREE.Clock();
+        let lastTime = Date.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const currentTime = Date.now();
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
+            // Update physics
+            world.step(1 / 60, deltaTime, 3);
+
+            // Update car physics
+            updateCarPhysics();
+
+            // Sync visual objects with physics bodies
+            car.position.copy(carBody.position);
+            car.quaternion.copy(carBody.quaternion);
+
+            ball.position.copy(ballBody.position);
+            ball.quaternion.copy(ballBody.quaternion);
+
+            // Update camera
+            updateCamera();
+
+            // Check for goals
+            checkGoal();
+
+            // Send updates to server (throttled)
+            if (currentTime % 50 < 16) { // ~20 updates per second
+                sendPlayerUpdate();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // ==========================================
+        // WINDOW RESIZE
+        // ==========================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==========================================
+        // INITIALIZATION
+        // ==========================================
+        createArena();
+        createBall();
+        createCar();
+        
+        // Try to connect to multiplayer server
+        try {
+            initializeMultiplayer();
+        } catch (e) {
+            console.log('Multiplayer not available, running in offline mode');
+            document.getElementById('connectionStatus').textContent = 'Offline Mode';
+        }
+
+        animate();
+    </script>
+</body>
+</html>
