@@ -1,14 +1,12 @@
 {
   "name": "battle-ball-server",
   "version": "1.0.0",
-  "description": "Multiplayer server for Battle Ball",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.5.4",
-    "cannon-es": "^0.20.0"
+    "socket.io": "^4.5.4"
   }
 }
