@@ -20,8 +20,7 @@ const io = socketIO(server, {
 });
 
 // Serve static files
-app.use(express.static(path.join(__dirname, '../client')));
-
+app.use(express.static(path.join(__dirname, '../')));
 // Configuration
 const CONFIG = {
     arena: {
